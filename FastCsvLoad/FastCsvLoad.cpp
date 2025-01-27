@@ -13,7 +13,8 @@
 // https://github.com/fastfloat/fast_float
 #include "../fast_float/fast_float.h"  // fast_floatヘッダファイルのインクルード
 
-#define COLUMN 10
+#define COLUMN_SIZE 10
+#define MARGIN_RATIO 1.01
 
 //////////////////////////////////////////////////////////////////////////////////////////////
 //読み込みデータの構造体定義 点群データを想定しているが、ただのfloat[10]と考えてOK
@@ -25,7 +26,7 @@ struct PointCloud {
             float r, g, b;    // 色
             float nx, ny, nz; // 法線ベクトル
         };
-        float fields[COLUMN];
+        float fields[COLUMN_SIZE];
     };
 };
 
@@ -180,7 +181,7 @@ void GetLineOffsets_AVX2_OpenMP(const char* fileContent, size_t contentSize, std
 // @param[in]  filename     入力ファイルパス（ワイド文字列）
 // @param[out] pointClouds  読み込んだ点群データを格納するベクター
 // @return                  成功時は 0、失敗時は非 0
-int FastCsvLoad(const std::wstring& filename,std::vector<PointCloud>& pointClouds)
+int FastCsvLoad(const std::wstring& filename, std::vector<PointCloud>& pointClouds, int num_cols)
 {
     // ファイルを開く (Windows API)
     HANDLE hFile = CreateFileW(
@@ -239,7 +240,7 @@ int FastCsvLoad(const std::wstring& filename,std::vector<PointCloud>& pointCloud
     // 推定行数を計算
     size_t estimatedLines = 0;
     if (firstLineSize > 0) {
-        estimatedLines = (contentSize / firstLineSize) * 1.01;//1%多めに設定
+        estimatedLines = (contentSize / firstLineSize) * MARGIN_RATIO;//5%多めに設定
     }
     std::cout << "estimatedLines: " << estimatedLines << " line" << std::endl;
 
@@ -286,8 +287,8 @@ int FastCsvLoad(const std::wstring& filename,std::vector<PointCloud>& pointCloud
 
             PointCloud p; // 一行分を格納する構造体
 
-            // 単純に COLUMN 個の float を CSV から読み込む
-            for (int i = 0; i < COLUMN; ++i) {
+            // 単純に num_cols個の float を CSV から読み込む
+            for (int i = 0; i < num_cols; ++i) {
                 // fast_float でパース
                 auto result = fast_float::from_chars(ptr, end, p.fields[i]);
                 ptr = result.ptr;
@@ -333,7 +334,7 @@ int main(int argc, char* argv[]) {
 
     // 処理時間計測の開始
     auto start = std::chrono::high_resolution_clock::now();
-    if (FastCsvLoad(wideFilePath, pointClouds) != 0) {
+    if (FastCsvLoad(wideFilePath, pointClouds, COLUMN_SIZE) != 0) {
         std::cerr << "Failed to load the file: " << inputFilePath << std::endl;
         return 1;
     }
@@ -369,7 +370,7 @@ int main_make_csv_for_test() {
 
     // 行数と列数を指定
     const long long num_rows = 100000000; // 1億行
-    const int num_cols = COLUMN;          // COLUMN=10列
+    const int num_cols = COLUMN_SIZE;          // COLUMN=10列
 
     // 出力ファイルを開く
     std::ofstream csvfile(output_file);
