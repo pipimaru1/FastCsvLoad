@@ -19,6 +19,7 @@ struct PointCloud {
 
 //////////////////////////////////////////////////////////////////////////////////////////////
 int FastCsvLoad(const std::wstring& filename, std::vector<PointCloud>& pointClouds, int num_cols);
+int FastCsvLoad2(const std::wstring& filename, std::vector<PointCloud>& pointClouds, int num_cols);
 
 //////////////////////////////////////////////////////////////////////////////////////////////
 //CSVファイル全体の「行の先頭位置（オフセット）」を取得
@@ -27,7 +28,7 @@ void GetLineOffsets(const char* fileContent, size_t contentSize, std::vector<siz
 //////////////////////////////////////////////////////////////////////////////////////////////
 // OpenMP による高速行オフセット取得
 void GetLineOffsets_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets);
-    
+
     //////////////////////////////////////////////////////////////////////////////////////////////
 // AVX2 + OpenMP による高速行オフセット取得
 void GetLineOffsets_AVX2_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets);
