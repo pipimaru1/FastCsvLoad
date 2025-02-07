@@ -298,6 +298,8 @@ int FastCsvLoad(const std::wstring& filename, std::vector<PointCloud>& pointClou
                 }
             }
 
+            std::cout << *ptr<<" "<< p.fields[0] << std::endl;
+
             // 出来上がった PointCloud をベクターに格納
             pointClouds[lineIndex] = p;
         }
