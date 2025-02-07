@@ -58,11 +58,54 @@ void GetLineOffsets(const char* fileContent, size_t contentSize, std::vector<siz
     }
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////
-//CSVファイル全体の「行の先頭位置（オフセット）」を取得　OpenMP使用
 void GetLineOffsets_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets) {
-    const size_t numThreads = omp_get_max_threads();
-    std::vector<std::vector<size_t>> localOffsets(numThreads);
+    const int numThreads = omp_get_max_threads(); // 使用可能な最大スレッド数
+    std::vector<std::vector<size_t>> localOffsets(numThreads); // スレッドごとの結果を格納
+
+#pragma omp parallel
+    {
+        int threadId = omp_get_thread_num(); // スレッドID
+        size_t chunkSize = contentSize / numThreads; // 各スレッドが処理するデータ範囲
+        size_t start = threadId * chunkSize;
+        size_t end = (threadId == numThreads - 1) ? contentSize : start + chunkSize;
+
+        // 先頭位置を調整（改行文字の途中から始まらないようにする）
+        if (threadId != 0) {
+            while (start < contentSize && (fileContent[start] == '\n' || fileContent[start] == '\r')) {
+                ++start;
+            }
+        }
+
+        for (size_t pos = start; pos < end;) {
+            // 現在の pos を行の先頭として記録
+            localOffsets[threadId].push_back(pos);
+
+            // 改行文字 (\n, \r) 以外の文字まで進む
+            while (pos < end && fileContent[pos] != '\n' && fileContent[pos] != '\r') {
+                ++pos;
+            }
+
+            // 改行文字 (\n, \r) をまとめてスキップ
+            while (pos < end && (fileContent[pos] == '\n' || fileContent[pos] == '\r')) {
+                ++pos;
+            }
+        }
+    }
+
+    // 結果を統合（`localOffsets` を `lineOffsets` にマージ）
+    for (const auto& offsets : localOffsets) {
+        lineOffsets.insert(lineOffsets.end(), offsets.begin(), offsets.end());
+    }
+}
+
+#include <immintrin.h>  // AVX2 用
+#include <vector>
+#include <omp.h>
+
+// AVX2 + OpenMP による高速行オフセット取得
+void GetLineOffsets_AVX2_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets) {
+    const int numThreads = omp_get_max_threads();
+    std::vector<std::vector<size_t>> localOffsets(numThreads);  // スレッドごとのオフセット格納
 
 #pragma omp parallel
     {
@@ -71,110 +114,68 @@ void GetLineOffsets_OpenMP(const char* fileContent, size_t contentSize, std::vec
         size_t start = threadId * chunkSize;
         size_t end = (threadId == numThreads - 1) ? contentSize : start + chunkSize;
 
-        for (size_t pos = start; pos < end; ++pos) {
-            if (fileContent[pos] == '\n') {
-                localOffsets[threadId].push_back(pos);
+        // 改行途中でスレッドを開始しないように調整
+        if (threadId != 0) {
+            while (start < contentSize && (fileContent[start] == '\n' || fileContent[start] == '\r')) {
+                ++start;
+            }
+        }
+
+        // `\n` と `\r` を検索するための AVX2 ベクトル
+        const __m256i newline_lf = _mm256_set1_epi8('\n');  // LF (Line Feed)
+        const __m256i newline_cr = _mm256_set1_epi8('\r');  // CR (Carriage Return)
+
+        size_t pos = start;
+        while (pos + 32 <= end) {
+            // 32バイトを読み込む
+            __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(fileContent + pos));
+
+            // 改行文字 (`\n` or `\r`) の位置を探す
+            __m256i cmp_lf = _mm256_cmpeq_epi8(chunk, newline_lf);
+            __m256i cmp_cr = _mm256_cmpeq_epi8(chunk, newline_cr);
+            __m256i cmp = _mm256_or_si256(cmp_lf, cmp_cr);  // 両者のビットマスクを統合
+
+            // 改行位置のビットマスクを取得
+            int mask = _mm256_movemask_epi8(cmp);
+
+            // ビットマスクを解析してオフセットを記録（次の行の先頭位置を記録する）
+            while (mask) {
+                int offset = _tzcnt_u32(mask);  // 最初に見つかったビット位置
+                size_t newOffset = pos + offset + 1; // **次の行の先頭位置** を記録
+
+                // **Windows の `\r\n` を考慮**（`newOffset` が `\r\n` の `\r` に当たっている場合は `\n` もスキップ）
+                if (newOffset < contentSize - 1 && fileContent[newOffset - 1] == '\r' && fileContent[newOffset] == '\n') {
+                    ++newOffset; // `\r\n` の `\n` へ進める
+                }
+
+                localOffsets[threadId].push_back(newOffset);
+                mask &= (mask - 1);  // すでに見つかったビットをクリア
+            }
+
+            pos += 32;  // 次の 32 バイトへ進む
+        }
+
+        // 残りの部分を処理（AVX2 で処理できなかった範囲）
+        for (; pos < end; ++pos) {
+            if (fileContent[pos] == '\n' || fileContent[pos] == '\r') {
+                size_t newOffset = pos + 1;
+
+                // **Windows の `\r\n` を考慮**
+                if (newOffset < contentSize - 1 && fileContent[newOffset - 1] == '\r' && fileContent[newOffset] == '\n') {
+                    ++newOffset;
+                }
+
+                localOffsets[threadId].push_back(newOffset);
             }
         }
     }
+
     // 結果を統合
     for (const auto& offsets : localOffsets) {
         lineOffsets.insert(lineOffsets.end(), offsets.begin(), offsets.end());
     }
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////
-//CSVファイル全体の「行の先頭位置（オフセット）」を取得　SSE使用
-void GetLineOffsets_SSE_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets) {
-    const int numThreads = omp_get_max_threads();
-    std::vector<std::vector<size_t>> threadOffsets(numThreads); // スレッドごとの結果を格納
-#pragma omp parallel
-    {
-        int threadId = omp_get_thread_num();
-        size_t chunkSize = contentSize / numThreads;
-        size_t start = threadId * chunkSize;
-        size_t end = (threadId == numThreads - 1) ? contentSize : start + chunkSize;
-        // 各スレッドで SIMD を使って処理
-        size_t pos = start;
-        const __m128i newline = _mm_set1_epi8('\n'); // 改行文字
-        while (pos + 16 <= end) {
-            // 16 バイト読み込み
-            __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(fileContent + pos));
-            // 改行文字との一致をチェック
-            __m128i cmp = _mm_cmpeq_epi8(chunk, newline);
-            // ビットマスクを生成
-            int mask = _mm_movemask_epi8(cmp);
-
-            // ビットマスクを解析してオフセットを記録
-            while (mask) {
-                int offset = _tzcnt_u32(mask); // 最初に見つかったビット位置
-                threadOffsets[threadId].push_back(pos + offset);
-                mask &= (mask - 1); // 処理済みビットを除去
-            }
-            pos += 16;
-        }
-        // 残りの部分を処理
-        for (; pos < end; ++pos) {
-            if (fileContent[pos] == '\n') {
-                threadOffsets[threadId].push_back(pos);
-            }
-        }
-    }
-
-    // 結果を統合
-    for (const auto& offsets : threadOffsets) {
-        lineOffsets.insert(lineOffsets.end(), offsets.begin(), offsets.end());
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////
-//CSVファイル全体の「行の先頭位置（オフセット）」を取得　AVX2使用
-void GetLineOffsets_AVX2_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets) {
-    const int numThreads = omp_get_max_threads();
-    std::vector<std::vector<size_t>> threadOffsets(numThreads); // スレッドごとの結果を格納
-#pragma omp parallel
-    {
-        int threadId = omp_get_thread_num();
-        size_t chunkSize = contentSize / numThreads;
-        size_t start = threadId * chunkSize;
-        size_t end = (threadId == numThreads - 1) ? contentSize : start + chunkSize;
-
-        // 各スレッドで AVX2 を使って処理
-        size_t pos = start;
-        const __m256i newline = _mm256_set1_epi8('\n'); // 改行文字をセット
-
-        while (pos + 32 <= end) {
-            // 32 バイト読み込み
-            __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(fileContent + pos));
-
-            // 改行文字との一致をチェック
-            __m256i cmp = _mm256_cmpeq_epi8(chunk, newline);
-
-            // ビットマスクを生成
-            int mask = _mm256_movemask_epi8(cmp);
-
-            // ビットマスクを解析してオフセットを記録
-            while (mask) {
-                int offset = _tzcnt_u32(mask); // 最初に見つかったビット位置
-                threadOffsets[threadId].push_back(pos + offset);
-                mask &= (mask - 1); // 処理済みビットを除去
-            }
-            pos += 32; // 次の 32 バイトに進む
-        }
-
-        // 残りの部分を処理
-        for (; pos < end; ++pos) {
-            if (fileContent[pos] == '\n') {
-                threadOffsets[threadId].push_back(pos);
-            }
-        }
-    }
-
-    // 結果を統合
-    for (const auto& offsets : threadOffsets) {
-        lineOffsets.insert(lineOffsets.end(), offsets.begin(), offsets.end());
-    }
-}
 
 //////////////////////////////////////////////////////////////////////////////////////////////
 // @brief 1行10要素のCSV ファイルを読み込み、pointClouds に格納する
@@ -253,7 +254,7 @@ int FastCsvLoad(const std::wstring& filename, std::vector<PointCloud>& pointClou
     // 推定行数で lineOffsets を事前予約
     lineOffsets.reserve(estimatedLines);
 
-    //通常の方法
+    //通常の方法 OK
     //GetLineOffsets(fileContent, contentSize, lineOffsets);
 
     //OpenMP使用
@@ -302,6 +303,8 @@ int FastCsvLoad(const std::wstring& filename, std::vector<PointCloud>& pointClou
 
             // 出来上がった PointCloud をベクターに格納
             pointClouds[lineIndex] = p;
+
+            std::cout << p.x << std::endl;
         }
     // メモリマップの後始末
     UnmapViewOfFile(pData);
