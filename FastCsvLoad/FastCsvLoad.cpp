@@ -5,11 +5,8 @@
 #include <string>
 #include <iostream>
 #include <omp.h>
-//#include <cstddef>
-//#include <cstddef>
-//#include <cstddef>
-#include <intrin.h>     // MSVCのビルトイン関数
-#include <emmintrin.h> // SSE2 (SIMD)
+#include <intrin.h>    // MSVCのビルトイン関数
+//#include <emmintrin.h> // SSE2 (SIMD)
 #include <immintrin.h> // AVX2 ヘッダ
 #include <chrono> // 処理時間計測用 時間計測しない場合は不要
 //#include <immintrin.h>  // AVX2 用
@@ -54,7 +51,8 @@ void GetLineOffsets(const char* fileContent, size_t contentSize, std::vector<siz
 #define NEWLINETYPE_LF      1
 #define NEWLINETYPE_UNKNOWN 0
 
-
+/////////////////////////////////////////////////////////////////////////
+//改行コードの種類を最初の1行で判別
 int DetectNewlineType(const char* fileContent, size_t contentSize) {
     for (size_t i = 0; i < contentSize; ++i) {
         if (fileContent[i] == '\n') {
@@ -70,9 +68,14 @@ int DetectNewlineType(const char* fileContent, size_t contentSize) {
     return NEWLINETYPE_UNKNOWN;
 }
 
+/////////////////////////////////////////////////////////////////////////
+//メモリマップのCSVデータを行ごとに分解
 void GetLineOffsets_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets)
 {
+    //改行コードの種類を最初の1行で判別
     int _nltype = DetectNewlineType(fileContent, contentSize);
+
+    //改行コードの種類で処理を分ける 改行コードが混在しないと仮定
     if (_nltype == NEWLINETYPE_CRLF)
     {
         GetLineOffsets_CRLF_OpenMP(fileContent, contentSize, lineOffsets);
@@ -88,9 +91,14 @@ void GetLineOffsets_OpenMP(const char* fileContent, size_t contentSize, std::vec
     return;
 }
 
+/////////////////////////////////////////////////////////////////////////
+//メモリマップのCSVデータを行ごとに分解　AVX2を使用 ほーんの少し速くなる
 void GetLineOffsets_AVX2_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets)
 {
+    //改行コードの種類を最初の1行で判別
     int _nltype = DetectNewlineType(fileContent, contentSize);
+
+    //改行コードの種類で処理を分ける 改行コードが混在しないと仮定
     if (_nltype == NEWLINETYPE_CRLF)
     {
         GetLineOffsets_CRLF_AVX2_OpenMP(fileContent, contentSize, lineOffsets);
@@ -107,6 +115,8 @@ void GetLineOffsets_AVX2_OpenMP(const char* fileContent, size_t contentSize, std
 }
 
 
+//////////////////////////////////////////////////////////////////////////////////
+//メモリマップのCSVデータを行ごとに分解　改行コードが混在している場合 汎用だが遅い
 void GetLineOffsets_LFCRLF_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets) {
     const int numThreads = omp_get_max_threads(); // 使用可能な最大スレッド数
     std::vector<std::vector<size_t>> localOffsets(numThreads); // スレッドごとの結果を格納
@@ -147,6 +157,8 @@ void GetLineOffsets_LFCRLF_OpenMP(const char* fileContent, size_t contentSize, s
     }
 }
 
+//////////////////////////////////////////////////////////////////////////////////
+//メモリマップのCSVデータを行ごとに分解　改行コードCRLF用
 void GetLineOffsets_CRLF_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets) {
     const int numThreads = omp_get_max_threads();
     std::vector<std::vector<size_t>> localOffsets(numThreads);
@@ -192,6 +204,8 @@ void GetLineOffsets_CRLF_OpenMP(const char* fileContent, size_t contentSize, std
     }
 }
 
+//////////////////////////////////////////////////////////////////////////////////
+//メモリマップのCSVデータを行ごとに分解　改行コードLF用
 void GetLineOffsets_LF_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets) {
     const int numThreads = omp_get_max_threads();
     std::vector<std::vector<size_t>> localOffsets(numThreads);
@@ -231,13 +245,9 @@ void GetLineOffsets_LF_OpenMP(const char* fileContent, size_t contentSize, std::
         lineOffsets.insert(lineOffsets.end(), offsets.begin(), offsets.end());
     }
 }
+//////////////////////////////////////////////////////////////////////////////////
 // AVX2 + OpenMP による高速行オフセット取得
-#include <immintrin.h>   // AVX2
-#include <omp.h>         // OpenMP
-#include <vector>
-#include <cstddef>
-#include <intrin.h>      // MSVC用 _BitScanForward
-
+//メモリマップのCSVデータを行ごとに分解　改行コードLF用
 void GetLineOffsets_LF_AVX2_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets) {
     const int numThreads = omp_get_max_threads();
     std::vector<std::vector<size_t>> localOffsets(numThreads);
@@ -314,6 +324,8 @@ void GetLineOffsets_LF_AVX2_OpenMP(const char* fileContent, size_t contentSize, 
     }
 }
 
+//////////////////////////////////////////////////////////////////////////////////
+//メモリマップのCSVデータを行ごとに分解　改行コードCRLF用
 void GetLineOffsets_CRLF_AVX2_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets) {
     const int numThreads = omp_get_max_threads();
     std::vector<std::vector<size_t>> localOffsets(numThreads);
@@ -392,7 +404,6 @@ void GetLineOffsets_CRLF_AVX2_OpenMP(const char* fileContent, size_t contentSize
         lineOffsets.insert(lineOffsets.end(), offsets.begin(), offsets.end());
     }
 }
-
 
 //////////////////////////////////////////////////////////////////////////////////////////////
 // @brief 1行10要素のCSV ファイルを読み込み、pointClouds に格納する
@@ -474,14 +485,7 @@ int FastCsvLoad(const std::wstring& filename, std::vector<PointCloud>& pointClou
     //通常の方法 OK
     //GetLineOffsets(fileContent, contentSize, lineOffsets);
 
-    //OpenMP使用
-    //GetLineOffsets_OpenMP(fileContent, contentSize, lineOffsets);
-    
-    //SSE使用
-    //GetLineOffsets_SSE_OpenMP(fileContent, contentSize, lineOffsets);
-
     //AVX2使用
-    //GetLineOffsets_LF_AVX2_OpenMP(fileContent, contentSize, lineOffsets);
     GetLineOffsets_AVX2_OpenMP(fileContent, contentSize, lineOffsets);
 
     //--------------------------------------------------------------------------
@@ -492,6 +496,7 @@ int FastCsvLoad(const std::wstring& filename, std::vector<PointCloud>& pointClou
     //--------------------------------------------------------------------------
     // 3) 各行を並列でパース（OpenMP 使用）
     //--------------------------------------------------------------------------
+    //PointCloud p; // 一行分を格納する構造体
 #pragma omp parallel for
         for (int lineIndex = 0; lineIndex < static_cast<int>(lineOffsets.size()); ++lineIndex)
         {
