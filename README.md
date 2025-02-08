@@ -1,6 +1,6 @@
 # 高速にCSVファイルを読み取ります。
 
-```cmd
+```
 C:\Programming\FastCsvLoad\x64\Release>FastCsvLoad.exe "C:\Programming\hoge\hoge\hoge.csv"
 FastCsvLoad.exe
 Read File: C:\Programming\hoge\hoge\hoge.csv
