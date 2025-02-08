@@ -4,7 +4,7 @@
 #include <string>
 #include <iostream>
 #include <omp.h>
-#include <emmintrin.h> // SSE2 (SIMD)
+//#include <emmintrin.h> // SSE2 (SIMD)
 #include <immintrin.h> // AVX2 ヘッダ
 #include <chrono> // 処理時間計測用 時間計測しない場合は不要
 

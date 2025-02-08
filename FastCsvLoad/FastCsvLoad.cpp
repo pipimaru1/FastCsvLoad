@@ -44,10 +44,11 @@ size_t GetLineOffsets(const char* fileContent, size_t contentSize, std::vector<s
     }
     return lineOffsets.size();
 }
+
+/////////////////////////////////////////////////////////////////////////
 #define NEWLINETYPE_CRLF    2
 #define NEWLINETYPE_LF      1
 #define NEWLINETYPE_UNKNOWN 0
-
 /////////////////////////////////////////////////////////////////////////
 //改行コードの種類を最初の1行で判別
 int DetectNewlineType(const char* fileContent, size_t contentSize) {
