@@ -36,7 +36,8 @@ int main(int argc, char* argv[]) {
     // ˆ—ŠÔŒv‘ª‚ÌŠJn
     auto start = std::chrono::high_resolution_clock::now();
     if (FastCsvLoad(wideFilePath, pointClouds, COLUMN_SIZE) != 0) {
-        std::cerr << "Failed to load the file: " << inputFilePath << std::endl;
+    //if (SlowCsvLoad(wideFilePath, pointClouds) != 0) {
+            std::cerr << "Failed to load the file: " << inputFilePath << std::endl;
         return 1;
     }
 

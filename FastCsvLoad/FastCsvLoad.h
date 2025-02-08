@@ -42,4 +42,5 @@ size_t GetLineOffsets_LF_AVX2_OpenMP(const char* fileContent, size_t contentSize
 //óºï˚ç¨ç›ÇÃèÍçá
 size_t GetLineOffsets_LFCRLF_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets);
 
+int SlowCsvLoad(const std::wstring& filePath, std::vector<PointCloud>& pointClouds);
 

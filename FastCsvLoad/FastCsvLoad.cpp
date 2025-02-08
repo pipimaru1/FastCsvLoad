@@ -213,9 +213,9 @@ size_t GetLineOffsets_CRLF_OpenMP(const char* fileContent, size_t contentSize, s
 //////////////////////////////////////////////////////////////////////////////////
 //メモリマップのCSVデータを行ごとに分解　改行コードLF用
 size_t GetLineOffsets_LF_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets) {
+    //omp_set_num_threads(1); //OpenMPの効果をキャンセルするためのコード
     const int numThreads = omp_get_max_threads();
     std::vector<std::vector<size_t>> localOffsets(numThreads);
-
 #pragma omp parallel
     {
         int threadId = omp_get_thread_num();
@@ -262,7 +262,6 @@ size_t GetLineOffsets_LF_OpenMP(const char* fileContent, size_t contentSize, std
 size_t GetLineOffsets_LF_AVX2_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets) {
     const int numThreads = omp_get_max_threads();
     std::vector<std::vector<size_t>> localOffsets(numThreads);
-
 #pragma omp parallel
     {
         int threadId = omp_get_thread_num();
@@ -504,11 +503,12 @@ int FastCsvLoad(const std::wstring& filename, std::vector<PointCloud>& pointClou
 
     //通常の方法 OK
     //GetLineOffsets(fileContent, contentSize, lineOffsets);
-    //GetLineOffsets_LF_OpenMP(fileContent, contentSize, lineOffsets);
+    GetLineOffsets_LF_OpenMP(fileContent, contentSize, lineOffsets);
     //GetLineOffsets_CRLF_OpenMP(fileContent, contentSize, lineOffsets);
+    //GetLineOffsets_LFCRLF_OpenMP(fileContent, contentSize, lineOffsets);
 
     //AVX2使用
-    GetLineOffsets_AVX2_OpenMP(fileContent, contentSize, lineOffsets);
+    //GetLineOffsets_AVX2_OpenMP(fileContent, contentSize, lineOffsets);
 
     //チェック
     //std::cout << "Read Lines by GetLine: " << lineOffsets.size() << std::endl;
@@ -566,3 +566,159 @@ int FastCsvLoad(const std::wstring& filename, std::vector<PointCloud>& pointClou
 }
 
 
+//////////////////////////////////////////////////////////////////////////////////////////////////
+//wstringをstringへ変換
+std::string wstring2string(const std::wstring& oWString)
+{
+    // wstring → SJIS
+    int iBufferSize = WideCharToMultiByte(CP_OEMCP, 0, oWString.c_str(), -1, (char*)NULL, 0, NULL, NULL);
+    // バッファの取得
+    CHAR* cpMultiByte = new CHAR[iBufferSize];
+    // wstring → SJIS
+    WideCharToMultiByte(CP_OEMCP, 0, oWString.c_str(), -1, cpMultiByte, iBufferSize, NULL, NULL);
+
+    // stringの生成 ここじゃダメ 関数が消えた後消去されるかも 値渡しだから大丈夫?
+    std::string oRet(cpMultiByte, cpMultiByte + iBufferSize - 1);
+    // バッファの破棄
+    delete[] cpMultiByte;
+    // 変換結果を返す
+    return(oRet);
+}
+
+#include <fstream>
+#include <sstream>
+#include <mutex>
+//#define _FASTFLOT fast floatを使う場合は有効にする。
+//////////////////////////////////////////////////////////////////////////////////////////////
+// @brief 1行10要素のCSV ファイルを読み込み、pointClouds に格納する
+// @param[in]  filename     入力ファイルパス（ワイド文字列）
+// @param[out] pointClouds  読み込んだ点群データを格納するベクター
+// @return                  成功時は 0、失敗時は非 0
+int SlowCsvLoad(const std::wstring& filePath, std::vector<PointCloud>& pointClouds)
+{
+    //DbgOutW _o;
+
+    // CSVファイルのパスを指定します
+    std::ifstream file(filePath);
+    if (!file.is_open())
+    {
+        std::cerr << "ファイルを開くことができませんでした。\n";
+        return 1;
+    }
+
+    std::string line;
+    std::vector<std::string> lines;
+
+    if (1)
+    {
+        while (std::getline(file, line))
+        {
+            // 行をカンマで分割するためのstringstreamを作成
+            std::stringstream ss(line);
+            std::string item;
+            std::vector<float> values;
+            PointCloud p;
+
+            // カンマ区切りで各要素を取得
+            while (std::getline(ss, item, ','))
+            {
+                try
+                {
+#ifndef _FASTFLOT //fast floatを使う場合は_FASTFLOTを定義
+                    float value = std::stof(item);
+                    values.push_back(value);
+#else 
+                    float value;
+                    auto result = fast_float::from_chars(item.data(), item.data() + item.size(), value);
+                    values.push_back(value);
+#endif
+                }
+                catch (const std::exception& e) {
+                    std::cerr << "数値に変換できない項目があります: " << item << '\n';
+                    return 1;
+                }
+            }
+            // 要素数が10であることを確認
+            if (values.size() != 10) {
+                std::cerr << "要素数が正しくありません。行: " << line << '\n';
+                return 1;
+            }
+
+            p.x = values[0];
+            p.y = values[1];
+            p.z = values[2];
+            p.acc = values[3];
+            p.r = values[4] / 256.0f;
+            p.g = values[5] / 256.0f;
+            p.b = values[6] / 256.0f;
+            p.nx = values[7];
+            p.ny = values[8];
+            p.nz = values[9];
+
+            pointClouds.push_back(p);
+        }
+    }
+    else
+    {
+        //std::string line;
+
+        // 逐次的にファイルを読み込む
+        while (std::getline(file, line)) {
+            lines.push_back(line);
+        }
+
+        std::vector<PointCloud> localPointClouds;
+        std::mutex mutex;
+
+        // 並列化された行の処理
+#pragma omp parallel
+        {
+            std::vector<PointCloud> localClouds;
+
+#pragma omp for nowait
+            for (int i = 0; i < lines.size(); ++i) {
+                std::stringstream ss(lines[i]);
+                std::string item;
+                std::vector<float> values;
+                PointCloud p;
+
+                while (std::getline(ss, item, ',')) {
+                    try {
+                        float value = std::stof(item);
+                        values.push_back(value);
+                    }
+                    catch (const std::exception& e) {
+                        std::cerr << "数値に変換できない項目があります: " << item << '\n';
+                        continue;
+                    }
+                }
+
+                if (values.size() == 10) {
+                    p.x = values[0];
+                    p.y = values[1];
+                    p.z = values[2];
+                    p.acc = values[3];
+                    p.r = values[4] / 256.0f;
+                    p.g = values[5] / 256.0f;
+                    p.b = values[6] / 256.0f;
+                    p.nx = values[7];
+                    p.ny = values[8];
+                    p.nz = values[9];
+
+                    localClouds.push_back(p);
+                }
+                else {
+                    std::cerr << "要素数が正しくありません。行: " << lines[i] << '\n';
+                }
+            }
+
+            // ローカル結果をグローバルにマージ
+            std::lock_guard<std::mutex> lock(mutex);
+            pointClouds.insert(pointClouds.end(), localClouds.begin(), localClouds.end());
+        }
+    }
+
+    file.close();
+
+    return 0;
+}
