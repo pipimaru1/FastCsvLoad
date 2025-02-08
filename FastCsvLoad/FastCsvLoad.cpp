@@ -588,7 +588,7 @@ std::string wstring2string(const std::wstring& oWString)
 #include <fstream>
 #include <sstream>
 #include <mutex>
-//#define _FASTFLOT fast floatを使う場合は有効にする。
+//#define _FASTFLOAT fast floatを使う場合は有効にする。
 //////////////////////////////////////////////////////////////////////////////////////////////
 // @brief 1行10要素のCSV ファイルを読み込み、pointClouds に格納する
 // @param[in]  filename     入力ファイルパス（ワイド文字列）
@@ -624,7 +624,7 @@ int SlowCsvLoad(const std::wstring& filePath, std::vector<PointCloud>& pointClou
             {
                 try
                 {
-#ifndef _FASTFLOT //fast floatを使う場合は_FASTFLOTを定義
+#ifndef _FASTFLOAT //fast floatを使う場合は_FASTFLOTを定義
                     float value = std::stof(item);
                     values.push_back(value);
 #else 
