@@ -565,26 +565,6 @@ int FastCsvLoad(const std::wstring& filename, std::vector<PointCloud>& pointClou
     return 0; // 正常終了
 }
 
-
-//////////////////////////////////////////////////////////////////////////////////////////////////
-//wstringをstringへ変換
-std::string wstring2string(const std::wstring& oWString)
-{
-    // wstring → SJIS
-    int iBufferSize = WideCharToMultiByte(CP_OEMCP, 0, oWString.c_str(), -1, (char*)NULL, 0, NULL, NULL);
-    // バッファの取得
-    CHAR* cpMultiByte = new CHAR[iBufferSize];
-    // wstring → SJIS
-    WideCharToMultiByte(CP_OEMCP, 0, oWString.c_str(), -1, cpMultiByte, iBufferSize, NULL, NULL);
-
-    // stringの生成 ここじゃダメ 関数が消えた後消去されるかも 値渡しだから大丈夫?
-    std::string oRet(cpMultiByte, cpMultiByte + iBufferSize - 1);
-    // バッファの破棄
-    delete[] cpMultiByte;
-    // 変換結果を返す
-    return(oRet);
-}
-
 #include <fstream>
 #include <sstream>
 #include <mutex>
