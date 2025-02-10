@@ -429,6 +429,7 @@ size_t GetLineOffsets_CRLF_AVX2_OpenMP(const char* fileContent, size_t contentSi
 // @param[in]  filename     入力ファイルパス（ワイド文字列）
 // @param[out] pointClouds  読み込んだ点群データを格納するベクター
 // @return                  成功時は 0、失敗時は非 0
+#define USE_AVX2
 int FastCsvLoad(const std::wstring& filename, std::vector<PointCloud>& pointClouds, int num_cols)
 {
     // ファイルを開く (Windows API)
@@ -501,18 +502,13 @@ int FastCsvLoad(const std::wstring& filename, std::vector<PointCloud>& pointClou
     // 推定行数で lineOffsets を事前予約
     lineOffsets.reserve(estimatedLines);
 
-    //通常の方法 OK
-    //GetLineOffsets(fileContent, contentSize, lineOffsets);
-    GetLineOffsets_LF_OpenMP(fileContent, contentSize, lineOffsets);
-    //GetLineOffsets_CRLF_OpenMP(fileContent, contentSize, lineOffsets);
-    //GetLineOffsets_LFCRLF_OpenMP(fileContent, contentSize, lineOffsets);
-
+#ifndef USE_AVX2
+    //AVX2不使用
+    GetLineOffsets(fileContent, contentSize, lineOffsets);
+#else
     //AVX2使用
-    //GetLineOffsets_AVX2_OpenMP(fileContent, contentSize, lineOffsets);
-
-    //チェック
-    //std::cout << "Read Lines by GetLine: " << lineOffsets.size() << std::endl;
-
+    GetLineOffsets_AVX2_OpenMP(fileContent, contentSize, lineOffsets);
+#endif
     //--------------------------------------------------------------------------
     // 2) 結果を格納するベクターを行数分確保
     //--------------------------------------------------------------------------

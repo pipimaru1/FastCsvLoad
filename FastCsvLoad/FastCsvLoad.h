@@ -1,10 +1,12 @@
 #pragma once
 
-#define COLUMN_SIZE 10
-#define MARGIN_RATIO 1.01
+#define COLUMN_SIZE 10 //CSVの列数が違う場合はここを変更
+#define MARGIN_RATIO 1.01 //メモリ確保の時の余裕率
 
 //////////////////////////////////////////////////////////////////////////////////////////////
-//読み込みデータの構造体定義 点群データを想定しているが、ただのfloat[10]と考えてOK
+// 読み込みデータの構造体定義
+// 点群データとして扱いやすいようunionを定義
+// 汎用的に使いたい場合は、unionブロックを消して、foatの配列だけの構造体にすればOK
 #ifndef _POINTCLOUD
 struct PointCloud {
     union {
@@ -19,6 +21,9 @@ struct PointCloud {
 };
 #endif
 
+
+
+
 //////////////////////////////////////////////////////////////////////////////////////////////
 //xyz型の点群データを上記の構造体の配列に格納する関数
 int FastCsvLoad(const std::wstring& filename, std::vector<PointCloud>& pointClouds, int num_cols);
@@ -32,7 +37,6 @@ size_t GetLineOffsets(const char* fileContent, size_t contentSize, std::vector<s
 size_t GetLineOffsets_CRLF_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets);
 size_t GetLineOffsets_LF_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets);
 size_t GetLineOffsets_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets);
-
 
 // AVX2 + OpenMP による高速行オフセット取得
 size_t GetLineOffsets_AVX2_OpenMP(const char* fileContent, size_t contentSize, std::vector<size_t>& lineOffsets);
